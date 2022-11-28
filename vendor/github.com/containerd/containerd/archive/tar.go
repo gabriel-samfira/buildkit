@@ -363,7 +363,7 @@ func createTarFile(ctx context.Context, path, extractDir string, hdr *tar.Header
 			return err
 		}
 
-		if err := os.Link(targetPath, path); err != nil {
+		if err := link(targetPath, path); err != nil {
 			return err
 		}
 

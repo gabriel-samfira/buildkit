@@ -18,6 +18,7 @@ package continuity
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -141,7 +142,7 @@ func (c *context) Resource(p string, fi os.FileInfo) (Resource, error) {
 	if fi == nil {
 		fi, err = c.driver.Lstat(fp)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("lstat error: %w", err)
 		}
 	}
 
@@ -151,8 +152,8 @@ func (c *context) Resource(p string, fi os.FileInfo) (Resource, error) {
 	}
 
 	base.xattrs, err = c.resolveXAttrs(fp, fi, base)
-	if err != nil && err != ErrNotSupported {
-		return nil, err
+	if err != nil && !errors.Is(err, ErrNotSupported) {
+		return nil, fmt.Errorf("resolving xattrs: %w", err)
 	}
 
 	// TODO(stevvooe): Handle windows alternate data streams.
@@ -160,7 +161,7 @@ func (c *context) Resource(p string, fi os.FileInfo) (Resource, error) {
 	if fi.Mode().IsRegular() {
 		dgst, err := c.digest(p)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("fetching digest: %w", err)
 		}
 
 		return newRegularFile(*base, base.paths, fi.Size(), dgst)
@@ -176,7 +177,7 @@ func (c *context) Resource(p string, fi os.FileInfo) (Resource, error) {
 		// root is treated as the absolute link anchor.
 		target, err := c.driver.Readlink(fp)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("resolving link: %w", err)
 		}
 
 		return newSymLink(*base, target)
@@ -196,7 +197,7 @@ func (c *context) Resource(p string, fi os.FileInfo) (Resource, error) {
 		// major/minor device number.
 		major, minor, err := deviceDriver.DeviceInfo(fi)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("fetching devie info: %w", err)
 		}
 
 		return newDevice(*base, base.paths, major, minor)
@@ -625,7 +626,7 @@ func (c *context) containWithRoot(p string, root string) (string, error) {
 
 // digest returns the digest of the file at path p, relative to the root.
 func (c *context) digest(p string) (digest.Digest, error) {
-	f, err := c.driver.Open(c.pathDriver.Join(c.root, p))
+	f, err := c.driver.OpenFile(c.pathDriver.Join(c.root, p), os.O_RDONLY, 0o755)
 	if err != nil {
 		return "", err
 	}

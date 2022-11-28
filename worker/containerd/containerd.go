@@ -10,7 +10,6 @@ import (
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/gc"
 	"github.com/containerd/containerd/leases"
-	gogoptypes "github.com/gogo/protobuf/types"
 	"github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/cache/metadata"
 	"github.com/moby/buildkit/executor/containerdexecutor"
@@ -24,6 +23,7 @@ import (
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/semaphore"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 // NewWorkerOpt creates a WorkerOpt.
@@ -53,7 +53,7 @@ func newContainerd(root string, client *containerd.Client, snapshotterName, ns s
 		return base.WorkerOpt{}, err
 	}
 
-	serverInfo, err := client.IntrospectionService().Server(context.TODO(), &gogoptypes.Empty{})
+	serverInfo, err := client.IntrospectionService().Server(context.TODO(), &emptypb.Empty{})
 	if err != nil {
 		return base.WorkerOpt{}, err
 	}

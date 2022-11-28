@@ -27,13 +27,30 @@ import (
 	"github.com/Microsoft/hcsshim"
 )
 
+const sourceStreamName = "containerd.io-source"
+
 var (
 	// ErrNotImplementOnWindows is returned when an action is not implemented for windows
 	ErrNotImplementOnWindows = errors.New("not implemented under windows")
 )
 
 // Mount to the provided target
-func (m *Mount) Mount(target string) error {
+func (m *Mount) Mount(target string) (err error) {
+	readOnly := false
+	for _, option := range m.Options {
+		if option == "ro" {
+			readOnly = true
+			break
+		}
+	}
+
+	if m.Type == "bind" {
+		if err := ApplyFileBinding(target, m.Source, readOnly); err != nil {
+			return fmt.Errorf("failed to bind-mount to %s: %w", target, err)
+		}
+		return nil
+	}
+
 	if m.Type != "windows-layer" {
 		return fmt.Errorf("invalid windows mount type: '%s'", m.Type)
 	}
@@ -52,21 +69,42 @@ func (m *Mount) Mount(target string) error {
 	if err = hcsshim.ActivateLayer(di, layerID); err != nil {
 		return fmt.Errorf("failed to activate layer %s: %w", m.Source, err)
 	}
+	defer func() {
+		if err != nil {
+			hcsshim.DeactivateLayer(di, layerID)
+		}
+	}()
 
 	if err = hcsshim.PrepareLayer(di, layerID, parentLayerPaths); err != nil {
 		return fmt.Errorf("failed to prepare layer %s: %w", m.Source, err)
 	}
+	defer func() {
+		if err != nil {
+			hcsshim.UnprepareLayer(di, layerID)
+		}
+	}()
 
-	// We can link the layer mount path to the given target. It is an UNC path, and it needs
-	// a trailing backslash.
-	mountPath, err := hcsshim.GetLayerMountPath(di, layerID)
+	volume, err := hcsshim.GetLayerMountPath(di, layerID)
 	if err != nil {
-		return fmt.Errorf("failed to get layer mount path for %s: %w", m.Source, err)
+		return fmt.Errorf("failed to get volume path for layer %s: %w", m.Source, err)
 	}
-	mountPath = mountPath + `\`
-	if err = os.Symlink(mountPath, target); err != nil {
-		return fmt.Errorf("failed to link mount to taget %s: %w", target, err)
+
+	if err = ApplyFileBinding(target, volume, readOnly); err != nil {
+		return fmt.Errorf("failed to set volume mount path for layer %s: %w", m.Source, err)
 	}
+	defer func() {
+		if err != nil {
+			RemoveFileBinding(target)
+		}
+	}()
+
+	// Add an Alternate Data Stream to record the layer source.
+	// See https://docs.microsoft.com/en-au/archive/blogs/askcore/alternate-data-streams-in-ntfs
+	// for details on Alternate Data Streams.
+	if err = os.WriteFile(filepath.Clean(target)+":"+sourceStreamName, []byte(m.Source), 0666); err != nil {
+		return fmt.Errorf("failed to record source for layer %s: %w", m.Source, err)
+	}
+
 	return nil
 }
 
@@ -90,24 +128,81 @@ func (m *Mount) GetParentPaths() ([]string, error) {
 
 // Unmount the mount at the provided path
 func Unmount(mount string, flags int) error {
-	var (
-		home, layerID = filepath.Split(mount)
-		di            = hcsshim.DriverInfo{
-			HomeDir: home,
+	var err error
+	mount = filepath.Clean(mount)
+	// This should expand paths like ADMINI~1 and PROGRA~1 to long names.
+	mount, err = getFinalPath(mount)
+	if err != nil {
+		return fmt.Errorf("fetching real path: %w", err)
+	}
+	mounts, err := GetBindMappings(mount)
+	if err != nil {
+		return fmt.Errorf("fetching bind mappings: %w", err)
+	}
+	found := false
+	for _, mnt := range mounts {
+		if mnt.MountPoint == mount {
+			found = true
+			break
 		}
-	)
-
-	if err := hcsshim.UnprepareLayer(di, layerID); err != nil {
-		return fmt.Errorf("failed to unprepare layer %s: %w", mount, err)
 	}
-	if err := hcsshim.DeactivateLayer(di, layerID); err != nil {
-		return fmt.Errorf("failed to deactivate layer %s: %w", mount, err)
+	if !found {
+		// not a mount point
+		return nil
 	}
 
+	adsFile := mount + ":" + sourceStreamName
+	var layerPath string
+
+	if _, err := os.Lstat(adsFile); err == nil {
+		layerPathb, err := os.ReadFile(mount + ":" + sourceStreamName)
+		if err != nil {
+			return fmt.Errorf("failed to retrieve source for layer %s: %w", mount, err)
+		}
+		layerPath = string(layerPathb)
+	}
+
+	if err := RemoveFileBinding(mount); err != nil {
+		return fmt.Errorf("removing mount: %w", err)
+	}
+
+	if layerPath != "" {
+		var (
+			home, layerID = filepath.Split(layerPath)
+			di            = hcsshim.DriverInfo{
+				HomeDir: home,
+			}
+		)
+
+		if err := hcsshim.UnprepareLayer(di, layerID); err != nil {
+			return fmt.Errorf("failed to unprepare layer %s: %w", mount, err)
+		}
+
+		if err := hcsshim.DeactivateLayer(di, layerID); err != nil {
+			return fmt.Errorf("failed to deactivate layer %s: %w", mount, err)
+		}
+	}
 	return nil
 }
 
 // UnmountAll unmounts from the provided path
 func UnmountAll(mount string, flags int) error {
+	if mount == "" {
+		// This isn't an error, per the EINVAL handling in the Linux version
+		return nil
+	}
+
 	return Unmount(mount, flags)
+}
+
+func (m *Mount) bindMount(target string) error {
+	readOnly := false
+	for _, option := range m.Options {
+		if option == "ro" {
+			readOnly = true
+			break
+		}
+	}
+
+	return ApplyFileBinding(target, m.Source, readOnly)
 }

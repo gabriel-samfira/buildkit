@@ -59,6 +59,8 @@ func copyFileInfo(fi os.FileInfo, src, name string) error {
 		return err
 	}
 
+	// windows.ConvertStringSidToSid()
+
 	sid, _, err := secInfo.Owner()
 	if err != nil {
 		return err
