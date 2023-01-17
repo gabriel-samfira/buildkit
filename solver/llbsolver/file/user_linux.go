@@ -13,7 +13,7 @@ import (
 	copy "github.com/tonistiigi/fsutil/copy"
 )
 
-func readUser(chopt *pb.ChownOpt, mu, mg fileoptypes.Mount) (*copy.User, error) {
+func (fb *Backend) readUser(chopt *pb.ChownOpt, mu, mg fileoptypes.Mount) (*copy.User, error) {
 	if chopt == nil {
 		return nil, nil
 	}

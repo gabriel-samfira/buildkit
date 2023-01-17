@@ -137,7 +137,7 @@ func newContainerd(root string, client *containerd.Client, snapshotterName, ns s
 		Labels:           xlabels,
 		MetadataStore:    md,
 		NetworkProviders: np,
-		Executor:         containerdexecutor.New(client, root, "", np, dns, apparmorProfile, selinux, traceSocket, rootless),
+		Executor:         containerdexecutor.New(client, root, "", np, dns, apparmorProfile, selinux, traceSocket, rootless, snap),
 		Snapshotter:      snap,
 		ContentStore:     cs,
 		Applier:          winlayers.NewFileSystemApplierWithWindows(cs, df),

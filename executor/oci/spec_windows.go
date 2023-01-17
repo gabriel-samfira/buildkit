@@ -4,14 +4,35 @@
 package oci
 
 import (
+	"context"
+	"os"
+
+	"github.com/containerd/containerd/containers"
 	"github.com/containerd/containerd/oci"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/moby/buildkit/solver/pb"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
 )
 
+func withGetUserInfoMount() oci.SpecOpts {
+	return func(_ context.Context, _ oci.Client, _ *containers.Container, s *specs.Spec) error {
+		execPath, err := os.Executable()
+		if err != nil {
+			return errors.Wrap(err, "getting executable path")
+		}
+		s.Mounts = append(s.Mounts, specs.Mount{
+			Destination: "C:\\Windows\\System32\\get-user-info.exe",
+			Source:      execPath,
+		})
+		return nil
+	}
+}
+
 func generateMountOpts(resolvConf, hostsFile string) ([]oci.SpecOpts, error) {
-	return nil, nil
+	return []oci.SpecOpts{
+		withGetUserInfoMount(),
+	}, nil
 }
 
 // generateSecurityOpts may affect mounts, so must be called after generateMountOpts
