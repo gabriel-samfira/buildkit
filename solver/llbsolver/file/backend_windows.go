@@ -6,9 +6,9 @@ import (
 )
 
 func mapUserToChowner(user *copy.User, idmap *idtools.IdentityMapping) (copy.Chowner, error) {
-	if user == nil {
+	if user == nil || user.SID == "" {
 		return func(old *copy.User) (*copy.User, error) {
-			if old == nil {
+			if old == nil || old.SID == "" {
 				old = &copy.User{
 					SID: idtools.ContainerAdministratorSidString,
 				}

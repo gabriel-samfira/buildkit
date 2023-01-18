@@ -20,7 +20,7 @@ func init() {
 
 func userInfoMain() {
 	if len(os.Args) != 2 {
-		fmt.Println("Usage: get-user-info username")
+		fmt.Println("Usage: get-user-info usernameOrGroup")
 		os.Exit(1)
 	}
 	username := os.Args[1]
