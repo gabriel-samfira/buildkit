@@ -4,14 +4,12 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"path/filepath"
 
 	"github.com/containerd/containerd/platforms"
 	"github.com/google/shlex"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/system"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
-	"github.com/pkg/errors"
 )
 
 type contextKeyT string
@@ -68,22 +66,17 @@ func dirf(value string, replace bool, v ...interface{}) StateOption {
 	}
 	return func(s State) State {
 		return s.withValue(keyDir, func(ctx context.Context, c *Constraints) (interface{}, error) {
-			if !system.IsAbs(value) {
+			if !system.IsAbs(value, c.Platform.OS) {
 				prev, err := getDir(s)(ctx, c)
 				if err != nil {
-					return nil, err
+					return nil, fmt.Errorf("failed to get dir from state: %w", err)
 				}
-
-				if prev == "" {
-					prev = "/"
+				value, err = system.NormalizePath(prev, value, c.Platform.OS, false)
+				if err != nil {
+					return nil, fmt.Errorf("failed to normalize path: %w", err)
 				}
-				value = filepath.Join(prev, value)
 			}
-			cleaned, err := system.CheckSystemDriveAndRemoveDriveLetter(value)
-			if err != nil {
-				return nil, errors.Wrap(err, "removing drive letter")
-			}
-			return cleaned, nil
+			return value, nil
 		})
 	}
 }
