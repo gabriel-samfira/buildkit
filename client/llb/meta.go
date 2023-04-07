@@ -66,12 +66,16 @@ func dirf(value string, replace bool, v ...interface{}) StateOption {
 	}
 	return func(s State) State {
 		return s.withValue(keyDir, func(ctx context.Context, c *Constraints) (interface{}, error) {
-			if !system.IsAbs(value, c.Platform.OS) {
+			var platform string
+			if c != nil && c.Platform != nil {
+				platform = c.Platform.OS
+			}
+			if !system.IsAbs(value, platform) {
 				prev, err := getDir(s)(ctx, c)
 				if err != nil {
 					return nil, fmt.Errorf("failed to get dir from state: %w", err)
 				}
-				value, err = system.NormalizePath(prev, value, c.Platform.OS, false)
+				value, err = system.NormalizePath(prev, value, platform, false)
 				if err != nil {
 					return nil, fmt.Errorf("failed to normalize path: %w", err)
 				}
