@@ -2,8 +2,8 @@ package oci
 
 import (
 	"context"
-	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 
@@ -132,6 +132,13 @@ func GenerateSpec(ctx context.Context, meta executor.Meta, mounts []executor.Mou
 		oci.WithHostname(hostname),
 	)
 
+	if runtime.GOOS == "windows" {
+		cmdLine := strings.Join(meta.Args, " ")
+		// This will set Args to nil and properly set the CommandLine option
+		// in the spec. On Windows we need to use CommandLine instead of Args.
+		opts = append(opts, oci.WithProcessCommandLine(cmdLine))
+	}
+
 	s, err := oci.GenerateSpec(ctx, nil, c, opts...)
 	if err != nil {
 		return nil, nil, err
@@ -224,7 +231,7 @@ type submounts struct {
 }
 
 func (s *submounts) subMount(m mount.Mount, subPath string) (mount.Mount, error) {
-	if path.Join("/", subPath) == "/" {
+	if filepath.ToSlash(filepath.Join("/", subPath)) == "/" {
 		return m, nil
 	}
 	if s.m == nil {
@@ -249,17 +256,24 @@ func (s *submounts) subMount(m mount.Mount, subPath string) (mount.Mount, error)
 		return mount.Mount{}, err
 	}
 
-	opts := []string{"rbind"}
-	for _, opt := range m.Options {
-		if opt == "ro" {
-			opts = append(opts, opt)
-		}
+	var mntType string
+	opts := []string{}
+	if m.ReadOnly() {
+		opts = append(opts, "ro")
+	}
+
+	if runtime.GOOS != "windows" {
+		// Windows uses a mechanism similar to bind mounts, but will err out if we request
+		// a mount type it does not understand. Leaving the mount type empty on Windows will
+		// yield the same result.
+		mntType = "bind"
+		opts = append(opts, "rbind")
 	}
 
 	s.m[h] = mountRef{
 		mount: mount.Mount{
 			Source:  mp,
-			Type:    "bind",
+			Type:    mntType,
 			Options: opts,
 		},
 		unmount: lm.Unmount,

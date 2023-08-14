@@ -4,9 +4,12 @@
 package oci
 
 import (
+	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 
+	"github.com/containerd/containerd/containers"
 	"github.com/containerd/containerd/oci"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/moby/buildkit/solver/pb"
@@ -18,8 +21,30 @@ const (
 	tracingSocketPath = "//./pipe/otel-grpc"
 )
 
+func withGetUserInfoMount() oci.SpecOpts {
+	return func(_ context.Context, _ oci.Client, _ *containers.Container, s *specs.Spec) error {
+		execPath, err := os.Executable()
+		if err != nil {
+			return errors.Wrap(err, "getting executable path")
+		}
+		// The buildkit binary registers a re-exec function that is invoked when called with
+		// get-user-info as the name. We mount the binary as read-only inside the container. This
+		// spares us from having to ship a separate binary just for this purpose. The container does
+		// not share any state with the running buildkit daemon. In this scenario, we use the re-exec
+		// functionality to simulate a multi-call binary.
+		s.Mounts = append(s.Mounts, specs.Mount{
+			Destination: "C:\\Windows\\System32\\get-user-info.exe",
+			Source:      execPath,
+			Options:     []string{"ro"},
+		})
+		return nil
+	}
+}
+
 func generateMountOpts(resolvConf, hostsFile string) ([]oci.SpecOpts, error) {
-	return nil, nil
+	return []oci.SpecOpts{
+		withGetUserInfoMount(),
+	}, nil
 }
 
 // generateSecurityOpts may affect mounts, so must be called after generateMountOpts
