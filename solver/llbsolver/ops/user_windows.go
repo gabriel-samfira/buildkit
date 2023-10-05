@@ -4,22 +4,21 @@ import (
 	"context"
 
 	"github.com/docker/docker/pkg/idtools"
-	"github.com/moby/buildkit/executor"
 	"github.com/moby/buildkit/solver/llbsolver/file"
-	"github.com/moby/buildkit/solver/llbsolver/ops/fileoptypes"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/windows"
+	"github.com/moby/buildkit/worker"
 	"github.com/pkg/errors"
 	copy "github.com/tonistiigi/fsutil/copy"
 )
 
-func getReadUserFn(exec executor.Executor) func(chopt *pb.ChownOpt, mu, mg fileoptypes.Mount) (*copy.User, error) {
-	return func(chopt *pb.ChownOpt, mu, mg fileoptypes.Mount) (*copy.User, error) {
-		return readUser(chopt, mu, mg, exec)
+func getReadUserFn(worker worker.Worker) func(chopt *pb.ChownOpt, mu, mg *file.Mount) (*copy.User, error) {
+	return func(chopt *pb.ChownOpt, mu, mg *file.Mount) (*copy.User, error) {
+		return readUser(chopt, mu, mg, worker)
 	}
 }
 
-func readUser(chopt *pb.ChownOpt, mu, mg fileoptypes.Mount, exec executor.Executor) (*copy.User, error) {
+func readUser(chopt *pb.ChownOpt, mu, mg *file.Mount, worker worker.Worker) (*copy.User, error) {
 	if chopt == nil {
 		return nil, nil
 	}
@@ -30,11 +29,7 @@ func readUser(chopt *pb.ChownOpt, mu, mg fileoptypes.Mount, exec executor.Execut
 			if mu == nil {
 				return nil, errors.Errorf("invalid missing user mount")
 			}
-			mmu, ok := mu.(*file.Mount)
-			if !ok {
-				return nil, errors.Errorf("invalid mount type %T", mu)
-			}
-			mountable := mmu.Mountable()
+			mountable := mu.Mountable()
 			if mountable == nil {
 				return nil, errors.Errorf("invalid mountable")
 			}
@@ -44,7 +39,7 @@ func readUser(chopt *pb.ChownOpt, mu, mg fileoptypes.Mount, exec executor.Execut
 				return nil, err
 			}
 			defer release()
-			ident, err := windows.ResolveUsernameToSID(context.Background(), exec, rootMounts, u.ByName.Name)
+			ident, err := windows.ResolveUsernameToSID(context.Background(), worker.Executor(), rootMounts, u.ByName.Name)
 			if err != nil {
 				return nil, err
 			}
